@@ -294,6 +294,7 @@ class OAuth2Helper(object):
 
         # Update sysadmin status
         if self.profile_api_groupmembership_field != "":
+            log.info("We have a groupmembership field %s " % self.profile_api_groupmembership_field)
             fields = self.profile_api_groupmembership_field.split(".")
             user_data_temp = user_data
             has_group = True
@@ -302,6 +303,7 @@ class OAuth2Helper(object):
                     user_data_temp = user_data_temp[x]
                 else:
                     has_group = False
+            log.info("has_group = %s and user_data_temp = %s and sysadmin_group_name = %s" % self.profile_api_groupmembership_field, user_data_temp, self.sysadmin_group_name)
             if has_group:
                 user.sysadmin = self.sysadmin_group_name in user_data_temp
 
