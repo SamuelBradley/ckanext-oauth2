@@ -101,6 +101,12 @@ class OAuth2Helper(object):
                 toolkit.config.get("ckan.oauth2.profile_api_url", ""),
             )
         ).strip()
+        self.logout_api_url = six.text_type(
+            os.environ.get(
+                "CKAN_OAUTH2_LOGOUT_API_URL",
+                toolkit.config.get("ckan.oauth2.logout_api_url", ""),
+            )
+        ).strip()
         self.client_id = six.text_type(
             os.environ.get(
                 "CKAN_OAUTH2_CLIENT_ID", toolkit.config.get("ckan.oauth2.client_id", "")
@@ -185,6 +191,19 @@ class OAuth2Helper(object):
         # CKAN 2.6 only supports bytes
         return toolkit.redirect_to(auth_url.encode("utf-8"))
 
+    def logout(self):
+        logout_redirect = urljoin(
+            toolkit.config.get("ckan.site_url", "http://localhost:5000"),
+            toolkit.config.get("ckan.root_path"),
+        )
+
+        req = requests.Request(
+            "GET",
+            self.logout_api_url,
+            params={"client_id": self.client_id, "returnTo": logout_redirect},
+        ).prepare()
+        toolkit.redirect_to(req.url)
+
     def get_token(self):
         oauth = OAuth2Session(
             self.client_id, redirect_uri=self.redirect_uri, scope=self.scope
@@ -222,20 +241,21 @@ class OAuth2Helper(object):
     def identify(self, token):
 
         if self.jwt_enable:
-
+            log.info("ID: Using jwt")
             access_token = bytes(token["access_token"])
             user_data = jwt.decode(access_token, verify=False)
             user = self.user_json(user_data)
         else:
-
             try:
                 if self.legacy_idm:
+                    log.info("ID: Using legacy idm")
                     profile_response = requests.get(
                         self.profile_api_url
                         + "?access_token=%s" % token["access_token"],
                         verify=self.verify_https,
                     )
                 else:
+                    log.info("ID: Using oauth2 ses")
                     oauth = OAuth2Session(self.client_id, token=token)
                     profile_response = oauth.get(
                         self.profile_api_url, verify=self.verify_https
@@ -293,20 +313,14 @@ class OAuth2Helper(object):
             user.fullname = user_data[self.profile_api_fullname_field]
 
         # Update sysadmin status
-        log.info("Checking groupmembership field %s " % self.profile_api_groupmembership_field)
-        if self.profile_api_groupmembership_field != "":
-            log.info("We have a groupmembership field %s " % self.profile_api_groupmembership_field)
-            fields = self.profile_api_groupmembership_field.split(".")
-            user_data_temp = user_data
-            has_group = True
-            for x in fields:
-                if x in user_data_temp:
-                    user_data_temp = user_data_temp[x]
-                else:
-                    has_group = False
-            log.info("has_group = %s and user_data_temp = %s and sysadmin_group_name = %s" % self.profile_api_groupmembership_field, user_data_temp, self.sysadmin_group_name)
-            if has_group:
-                user.sysadmin = self.sysadmin_group_name in user_data_temp
+        if (
+            self.profile_api_groupmembership_field != ""
+            and self.profile_api_groupmembership_field in user_data
+        ):
+            user.sysadmin = (
+                self.sysadmin_group_name
+                in user_data[self.profile_api_groupmembership_field]
+            )
 
         return user
 
